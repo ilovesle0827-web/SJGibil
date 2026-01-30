@@ -1,31 +1,124 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>吉卜力風格轉換器</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-      body {
-        font-family: 'Noto Sans TC', sans-serif;
-      }
-    </style>
     <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "@google/genai": "https://esm.sh/@google/genai@1.38.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/"
-  }
-}
-</script>
-  <link rel="stylesheet" href="/index.css">
+      {
+        "imports": {
+          "@google/generative-ai": "https://esm.run/@google/generative-ai"
+        }
+      }
+    </script>
+    <style>
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { animation: spin 1s linear infinite; }
+    </style>
 </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-  </body>
+<body class="bg-slate-50 min-h-screen text-slate-800">
+
+    <header class="bg-white border-b sticky top-0 z-50 px-4 py-3 flex justify-between items-center shadow-sm">
+        <div class="font-bold text-green-600 text-lg">🌿 吉卜力風格轉換器</div>
+        <input type="password" id="api-key-input" placeholder="在此貼上 API Key (AIza...)" 
+               class="border rounded px-3 py-1 text-sm w-48 focus:ring-2 focus:ring-green-500 outline-none">
+    </header>
+
+    <main class="max-w-4xl mx-auto p-6 flex flex-col md:flex-row gap-8 mt-4">
+        
+        <div class="flex-1 space-y-6">
+            <div class="bg-white p-6 rounded-2xl shadow border border-slate-100">
+                <h2 class="font-bold mb-4 text-slate-600">1. 上傳照片</h2>
+                <div class="relative group cursor-pointer" onclick="document.getElementById('file-upload').click()">
+                    <input type="file" id="file-upload" class="hidden" accept="image/*">
+                    <div class="aspect-video bg-slate-100 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center group-hover:border-green-400 transition">
+                        <img id="preview-img" class="hidden w-full h-full object-cover rounded-xl">
+                        <div id="upload-hint" class="text-slate-400 text-sm">點擊上傳圖片</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl shadow border border-slate-100">
+                <h2 class="font-bold mb-4 text-slate-600">2. 額外要求 (選填)</h2>
+                <textarea id="custom-prompt" class="w-full border rounded-lg p-3 text-sm h-24" placeholder="例如：變成晚上的樣子、加上很多花..."></textarea>
+                <button id="generate-btn" class="w-full mt-4 bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-green-200">
+                    ✨ 開始魔法轉換
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1">
+            <div class="bg-slate-800 text-slate-200 p-6 rounded-2xl h-full min-h-[400px] shadow-inner font-mono text-sm leading-relaxed overflow-auto relative">
+                <div id="loading" class="hidden absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm">
+                    <div class="w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full spinner mb-3"></div>
+                    <div>AI 正在思考中...</div>
+                </div>
+                <div id="result-text">結果會顯示在這裡...</div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from "@google/generative-ai";
+
+        const apiKeyInput = document.getElementById('api-key-input');
+        const fileUpload = document.getElementById('file-upload');
+        const previewImg = document.getElementById('preview-img');
+        const uploadHint = document.getElementById('upload-hint');
+        const generateBtn = document.getElementById('generate-btn');
+        const loading = document.getElementById('loading');
+        const resultText = document.getElementById('result-text');
+        const customPrompt = document.getElementById('custom-prompt');
+
+        let selectedFile = null;
+
+        fileUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                selectedFile = file;
+                previewImg.src = URL.createObjectURL(file);
+                previewImg.classList.remove('hidden');
+                uploadHint.classList.add('hidden');
+            }
+        });
+
+        async function fileToPart(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve({
+                    inlineData: { data: reader.result.split(',')[1], mimeType: file.type }
+                });
+                reader.readAsDataURL(file);
+            });
+        }
+
+        generateBtn.addEventListener('click', async () => {
+            const key = apiKeyInput.value.trim();
+            if (!key) return alert("請先在右上角填入 API Key！");
+            if (!selectedFile) return alert("請先上傳圖片！");
+
+            loading.classList.remove('hidden');
+            resultText.innerText = "";
+            generateBtn.disabled = true;
+
+            try {
+                const genAI = new GoogleGenerativeAI(key);
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                
+                const prompt = `你是一位吉卜力美術指導。請用繁體中文，詳細描述如果將這張圖變成吉卜力風格會長什麼樣？包含色調、光影與細節。額外要求：${customPrompt.value}`;
+                
+                const imagePart = await fileToPart(selectedFile);
+                const result = await model.generateContent([prompt, imagePart]);
+                
+                resultText.innerText = result.response.text();
+            } catch (err) {
+                resultText.innerText = "發生錯誤：" + err.message;
+            } finally {
+                loading.classList.add('hidden');
+                generateBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
 </html>
